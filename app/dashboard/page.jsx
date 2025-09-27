@@ -8,7 +8,7 @@ import { ImageUpload } from "@/components/image-upload"
 import { BulkActions } from "@/components/bulk-actions"
 import { ImageResults } from "@/components/image-results"
 import { generateMetadata, toBase64 } from "@/lib/metadata-generator"
-// import { exportSingleCSV, exportBulkCSV } from "@/lib/csv-export"
+import { exportSingleCSV, exportBulkCSV } from "@/lib/csv-export"
 
 export default function Dashboard() {
     const [apiKeys, setApiKeys] = useState([])
