@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { ImageIcon, Zap } from "lucide-react"
 import { ApiManagement } from "@/components/api-management"
-// import { ImageUpload } from "@/components/image-upload"
+import { ImageUpload } from "@/components/image-upload"
 // import { BulkActions } from "@/components/bulk-actions"
 // import { ImageResults } from "@/components/image-results"
 // import { generateMetadata, toBase64 } from "@/lib/metadata-generator"
@@ -181,7 +181,7 @@ export default function Dashboard() {
                     setSelectedModel={setSelectedModel}
                 />
 
-                {/* <ImageUpload onFileChange={handleFileChange} isProcessing={isProcessing} hasApiConfig={hasApiConfig} /> */}
+                <ImageUpload onFileChange={handleFileChange} isProcessing={isProcessing} hasApiConfig={hasApiConfig} />
                 {/* 
                 <BulkActions
                     images={images}
