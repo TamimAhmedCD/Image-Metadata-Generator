@@ -148,7 +148,7 @@ export default function Dashboard() {
     }
 
     const handleExportCSV = (img) => {
-        // exportSingleCSV(img, exportFormat)
+        exportSingleCSV(img, exportFormat)
     }
 
     return (
