@@ -6,7 +6,7 @@ import { ImageIcon, Zap } from "lucide-react"
 import { ApiManagement } from "@/components/api-management"
 import { ImageUpload } from "@/components/image-upload"
 import { BulkActions } from "@/components/bulk-actions"
-// import { ImageResults } from "@/components/image-results"
+import { ImageResults } from "@/components/image-results"
 // import { generateMetadata, toBase64 } from "@/lib/metadata-generator"
 // import { exportSingleCSV, exportBulkCSV } from "@/lib/csv-export"
 
@@ -193,7 +193,7 @@ export default function Dashboard() {
                     onBulkExport={handleBulkExport}
                 />
 
-                {/* <ImageResults
+                <ImageResults
                     images={images}
                     isProcessing={isProcessing}
                     hasApiConfig={hasApiConfig}
@@ -201,7 +201,7 @@ export default function Dashboard() {
                     onGenerate={handleGenerateClick}
                     onExport={handleExportCSV}
                     onDelete={handleDeleteImage}
-                /> */}
+                />
             </div>
         </div>
     )
