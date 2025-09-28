@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { Key, Plus, Trash2 } from "lucide-react"
+import { Switch } from "@/components/ui/switch"
+import { Key, Plus, Trash2, Power, PowerOff } from "lucide-react"
 
 export const PROVIDERS = {
     gemini: {
@@ -94,13 +95,14 @@ export function ApiManagement({
             return
         }
 
-        const provider = PROVIDERS[newApiKey.provider]
+        const provider = PROVIDERS[newApiKey.provide]
         const apiKey = {
             id: Date.now().toString(),
             name: newApiKey.name,
             key: newApiKey.key,
             provider: newApiKey.provider,
             models: provider.models.map((m) => m.id),
+            isActive: true, // Default to active
         }
 
         setApiKeys([...apiKeys, apiKey])
@@ -119,6 +121,10 @@ export function ApiManagement({
         if (selectedApiKey === id) {
             setSelectedApiKey(newKeys.length > 0 ? newKeys[0].id : "")
         }
+    }
+
+    const toggleApiKeyStatus = (id) => {
+        setApiKeys(apiKeys.map((key) => (key.id === id ? { ...key, isActive: !key.isActive } : key)))
     }
 
     const currentApiKey = apiKeys.find((key) => key.id === selectedApiKey)
@@ -217,23 +223,39 @@ export function ApiManagement({
                                         <Badge variant="outline">{PROVIDERS[apiKey.provider].name}</Badge>
                                         <span className="font-medium">{apiKey.name}</span>
                                         <span className="text-sm text-muted-foreground">{apiKey.key.substring(0, 8)}...</span>
+                                        <Badge variant={apiKey.isActive ? "default" : "secondary"} className="flex items-center gap-1">
+                                            {apiKey.isActive ? <Power className="w-3 h-3" /> : <PowerOff className="w-3 h-3" />}
+                                            {apiKey.isActive ? "Active" : "Inactive"}
+                                        </Badge>
                                     </div>
-                                    <Button
-                                        onClick={() => removeApiKey(apiKey.id)}
-                                        variant="ghost"
-                                        size="sm"
-                                        className="text-destructive hover:text-destructive"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </Button>
+                                    <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-2">
+                                            <Label htmlFor={`toggle-${apiKey.id}`} className="text-sm">
+                                                Active
+                                            </Label>
+                                            <Switch
+                                                id={`toggle-${apiKey.id}`}
+                                                checked={apiKey.isActive}
+                                                onCheckedChange={() => toggleApiKeyStatus(apiKey.id)}
+                                            />
+                                        </div>
+                                        <Button
+                                            onClick={() => removeApiKey(apiKey.id)}
+                                            variant="ghost"
+                                            size="sm"
+                                            className="text-destructive hover:text-destructive"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </Button>
+                                    </div>
                                 </div>
                             ))}
                         </div>
                     </div>
                 )}
 
-                {/* API Key and Model Selection */}
-                {apiKeys.length > 0 && (
+                {/* API Key and Model Selection - Only show active keys */}
+                {apiKeys.filter((key) => key.isActive).length > 0 && (
                     <div className="grid md:grid-cols-2 gap-4">
                         <div>
                             <Label htmlFor="api-key-select">Select API Key</Label>
@@ -242,11 +264,13 @@ export function ApiManagement({
                                     <SelectValue placeholder="Choose API key" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {apiKeys.map((apiKey) => (
-                                        <SelectItem key={apiKey.id} value={apiKey.id}>
-                                            {apiKey.name} ({PROVIDERS[apiKey.provider].name})
-                                        </SelectItem>
-                                    ))}
+                                    {apiKeys
+                                        .filter((key) => key.isActive)
+                                        .map((apiKey) => (
+                                            <SelectItem key={apiKey.id} value={apiKey.id}>
+                                                {apiKey.name} ({PROVIDERS[apiKey.provider].name})
+                                            </SelectItem>
+                                        ))}
                                 </SelectContent>
                             </Select>
                         </div>

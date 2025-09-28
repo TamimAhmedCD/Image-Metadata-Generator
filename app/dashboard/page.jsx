@@ -1,8 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import { Badge } from "@/components/ui/badge"
-import { ImageIcon, Zap } from "lucide-react"
+import { ImageIcon, Zap, Settings } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ThemeToggle } from "@/components/theme-toggle"
 import { ApiManagement } from "@/components/api-management"
 import { ImageUpload } from "@/components/image-upload"
 import { BulkActions } from "@/components/bulk-actions"
@@ -18,10 +20,10 @@ export default function Dashboard() {
     const [isProcessing, setIsProcessing] = useState(false)
     const [exportFormat, setExportFormat] = useState("full")
 
-    const currentApiKey = apiKeys.find((key) => key.id === selectedApiKey)
+    const currentApiKey = apiKeys.find((key) => key.id === selectedApiKey && key.isActive)
     const hasApiConfig = !!(currentApiKey && selectedModel)
 
-    const handleFileChange = async (e) => {
+    const handleFileChange = useCallback(async (e) => {
         const files = Array.from(e.target.files || [])
         if (!files.length) return
 
@@ -34,71 +36,23 @@ export default function Dashboard() {
         }))
 
         setImages((prev) => [...newImages, ...prev])
-    }
+    }, [])
 
-    const handleGenerateClick = async (imageId, outputType) => {
-        const img = images.find((i) => i.id === imageId)
-        if (!img || isProcessing || !currentApiKey || !selectedModel) return
+    const updateImageStatus = useCallback((imageId, status, result) => {
+        setImages((prev) => prev.map((img) => (img.id === imageId ? { ...img, status, ...(result && { result }) } : img)))
+    }, [])
 
-        setIsProcessing(true)
-        setImages((prev) => prev.map((i) => (i.id === imageId ? { ...i, status: "processing" } : i)))
+    const handleGenerateClick = useCallback(
+        async (imageId, outputType) => {
+            const img = images.find((i) => i.id === imageId)
+            if (!img || isProcessing || !currentApiKey || !selectedModel) return
 
-        try {
-            const base64 = await toBase64(img.file)
+            setIsProcessing(true)
+            updateImageStatus(imageId, "processing")
 
-            const metadata = await generateMetadata(
-                { file: img.file, base64, mimeType: img.file.type },
-                currentApiKey,
-                selectedModel,
-                outputType,
-            )
-
-            setImages((prev) =>
-                prev.map((i) =>
-                    i.id === imageId
-                        ? {
-                            ...i,
-                            status: "complete",
-                            result: metadata,
-                        }
-                        : i,
-                ),
-            )
-        } catch (error) {
-            console.error(`Error processing ${img.file.name}:`, error)
-            setImages((prev) =>
-                prev.map((i) =>
-                    i.id === imageId
-                        ? {
-                            ...i,
-                            status: "error",
-                            result: {
-                                prompt: `Error: ${error.message}`,
-                                title: "API ERROR",
-                                keywords: "error",
-                            },
-                        }
-                        : i,
-                ),
-            )
-        } finally {
-            setIsProcessing(false)
-        }
-    }
-
-    const handleBulkGenerate = async (outputType) => {
-        const pendingImages = images.filter((img) => img.status === "pending")
-        if (pendingImages.length === 0 || isProcessing || !currentApiKey || !selectedModel) return
-
-        setIsProcessing(true)
-
-        // Mark all pending images as processing
-        setImages((prev) => prev.map((img) => (img.status === "pending" ? { ...img, status: "processing" } : img)))
-
-        // Process images sequentially to avoid rate limits
-        for (const img of pendingImages) {
             try {
                 const base64 = await toBase64(img.file)
+
                 const metadata = await generateMetadata(
                     { file: img.file, base64, mimeType: img.file.type },
                     currentApiKey,
@@ -106,38 +60,75 @@ export default function Dashboard() {
                     outputType,
                 )
 
-                setImages((prev) => prev.map((i) => (i.id === img.id ? { ...i, status: "complete", result: metadata } : i)))
+                updateImageStatus(imageId, "complete", metadata)
             } catch (error) {
                 console.error(`Error processing ${img.file.name}:`, error)
-                setImages((prev) =>
-                    prev.map((i) =>
-                        i.id === img.id
-                            ? {
-                                ...i,
-                                status: "error",
-                                result: {
-                                    prompt: `Error: ${error.message}`,
-                                    title: "API ERROR",
-                                    keywords: "error",
-                                },
-                            }
-                            : i,
-                    ),
-                )
+                const errorMessage = error.message || "Unknown error occurred"
+                const isServiceUnavailable = errorMessage.includes("Service temporarily unavailable")
+
+                updateImageStatus(imageId, "error", {
+                    prompt: `Error: ${errorMessage}${isServiceUnavailable ? "\n\nTip: Click the retry button to try again." : ""}`,
+                    title: "API ERROR",
+                    keywords: "error",
+                    canRetry:
+                        isServiceUnavailable || errorMessage.includes("Rate limit") || errorMessage.includes("Server error"),
+                })
+            } finally {
+                setIsProcessing(false)
+            }
+        },
+        [images, isProcessing, currentApiKey, selectedModel, updateImageStatus],
+    )
+
+    const handleBulkGenerate = useCallback(
+        async (outputType) => {
+            const pendingImages = images.filter((img) => img.status === "pending")
+            if (pendingImages.length === 0 || isProcessing || !currentApiKey || !selectedModel) return
+
+            setIsProcessing(true)
+
+            // Mark all pending images as processing
+            setImages((prev) => prev.map((img) => (img.status === "pending" ? { ...img, status: "processing" } : img)))
+
+            // Process images sequentially to avoid rate limits
+            for (const img of pendingImages) {
+                try {
+                    const base64 = await toBase64(img.file)
+                    const metadata = await generateMetadata(
+                        { file: img.file, base64, mimeType: img.file.type },
+                        currentApiKey,
+                        selectedModel,
+                        outputType,
+                    )
+
+                    updateImageStatus(img.id, "complete", metadata)
+                } catch (error) {
+                    console.error(`Error processing ${img.file.name}:`, error)
+                    const errorMessage = error.message || "Unknown error occurred"
+                    const isServiceUnavailable = errorMessage.includes("Service temporarily unavailable")
+
+                    updateImageStatus(img.id, "error", {
+                        prompt: `Error: ${errorMessage}`,
+                        title: "API ERROR",
+                        keywords: "error",
+                        canRetry:
+                            isServiceUnavailable || errorMessage.includes("Rate limit") || errorMessage.includes("Server error"),
+                    })
+                }
+
+                await new Promise((resolve) => setTimeout(resolve, 2000))
             }
 
-            // Small delay between requests to be respectful to APIs
-            await new Promise((resolve) => setTimeout(resolve, 1000))
-        }
+            setIsProcessing(false)
+        },
+        [images, isProcessing, currentApiKey, selectedModel, updateImageStatus],
+    )
 
-        setIsProcessing(false)
-    }
-
-    const handleBulkExport = () => {
+    const handleBulkExport = useCallback(() => {
         exportBulkCSV(images, exportFormat)
-    }
+    }, [images, exportFormat])
 
-    const handleDeleteImage = (imageId) => {
+    const handleDeleteImage = useCallback((imageId) => {
         setImages((prev) => {
             const imageToDelete = prev.find((img) => img.id === imageId)
             if (imageToDelete?.url) {
@@ -145,11 +136,28 @@ export default function Dashboard() {
             }
             return prev.filter((img) => img.id !== imageId)
         })
-    }
+    }, [])
 
-    const handleExportCSV = (img) => {
-        exportSingleCSV(img, exportFormat)
-    }
+    const handleExportCSV = useCallback(
+        (img) => {
+            exportSingleCSV(img, exportFormat)
+        },
+        [exportFormat],
+    )
+
+    const handleRetryImage = useCallback(
+        async (imageId) => {
+            const img = images.find((i) => i.id === imageId)
+            if (!img || isProcessing || !currentApiKey || !selectedModel) return
+
+            updateImageStatus(imageId, "pending")
+
+            setTimeout(() => {
+                handleGenerateClick(imageId, "full")
+            }, 100)
+        },
+        [images, isProcessing, currentApiKey, selectedModel, updateImageStatus, handleGenerateClick],
+    )
 
     return (
         <div className="min-h-screen bg-background">
@@ -163,45 +171,66 @@ export default function Dashboard() {
                             </div>
                             <span className="text-xl font-bold">MetaGen AI</span>
                         </div>
-                        <Badge variant="secondary" className="px-3 py-1">
-                            <Zap className="w-3 h-3 mr-1" />
-                            Dashboard
-                        </Badge>
+                        <div className="flex items-center gap-4">
+                            <Badge variant="secondary" className="px-3 py-1">
+                                <Zap className="w-3 h-3 mr-1" />
+                                Dashboard
+                            </Badge>
+                            <ThemeToggle />
+                        </div>
                     </div>
                 </div>
             </header>
 
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                <ApiManagement
-                    apiKeys={apiKeys}
-                    setApiKeys={setApiKeys}
-                    selectedApiKey={selectedApiKey}
-                    setSelectedApiKey={setSelectedApiKey}
-                    selectedModel={selectedModel}
-                    setSelectedModel={setSelectedModel}
-                />
+                <Tabs defaultValue="generate" className="w-full">
+                    <TabsList className="grid w-full grid-cols-2 mb-8">
+                        <TabsTrigger value="generate" className="flex items-center gap-2">
+                            <ImageIcon className="w-4 h-4" />
+                            Generate
+                        </TabsTrigger>
+                        <TabsTrigger value="settings" className="flex items-center gap-2">
+                            <Settings className="w-4 h-4" />
+                            API Settings
+                        </TabsTrigger>
+                    </TabsList>
 
-                <ImageUpload onFileChange={handleFileChange} isProcessing={isProcessing} hasApiConfig={hasApiConfig} />
+                    <TabsContent value="generate" className="space-y-8">
+                        <ImageUpload onFileChange={handleFileChange} isProcessing={isProcessing} hasApiConfig={hasApiConfig} />
 
-                <BulkActions
-                    images={images}
-                    isProcessing={isProcessing}
-                    hasApiConfig={hasApiConfig}
-                    exportFormat={exportFormat}
-                    setExportFormat={setExportFormat}
-                    onBulkGenerate={handleBulkGenerate}
-                    onBulkExport={handleBulkExport}
-                />
+                        <BulkActions
+                            images={images}
+                            isProcessing={isProcessing}
+                            hasApiConfig={hasApiConfig}
+                            exportFormat={exportFormat}
+                            setExportFormat={setExportFormat}
+                            onBulkGenerate={handleBulkGenerate}
+                            onBulkExport={handleBulkExport}
+                        />
 
-                <ImageResults
-                    images={images}
-                    isProcessing={isProcessing}
-                    hasApiConfig={hasApiConfig}
-                    exportFormat={exportFormat}
-                    onGenerate={handleGenerateClick}
-                    onExport={handleExportCSV}
-                    onDelete={handleDeleteImage}
-                />
+                        <ImageResults
+                            images={images}
+                            isProcessing={isProcessing}
+                            hasApiConfig={hasApiConfig}
+                            exportFormat={exportFormat}
+                            onGenerate={handleGenerateClick}
+                            onExport={handleExportCSV}
+                            onDelete={handleDeleteImage}
+                            onRetry={handleRetryImage}
+                        />
+                    </TabsContent>
+
+                    <TabsContent value="settings">
+                        <ApiManagement
+                            apiKeys={apiKeys}
+                            setApiKeys={setApiKeys}
+                            selectedApiKey={selectedApiKey}
+                            setSelectedApiKey={setSelectedApiKey}
+                            selectedModel={selectedModel}
+                            setSelectedModel={setSelectedModel}
+                        />
+                    </TabsContent>
+                </Tabs>
             </div>
         </div>
     )
