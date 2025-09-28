@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label"
 import { FileText, Tags, Zap, Download, Loader2 } from "lucide-react"
 import { ProgressIndicator } from "./progress-indicator"
 
+
 export function BulkActions({
     images,
     isProcessing,
