@@ -27,6 +27,7 @@ export const PROVIDERS = {
         name: "OpenRouter",
         baseUrl: "https://openrouter.ai/api/v1/chat/completions",
         models: [
+            { id: "openai/gpt-5", name: "GPT-5" }, // Newest flagship model
             { id: "gpt-4o", name: "GPT-4o" },
             { id: "claude-3-5-sonnet", name: "Claude 3.5 Sonnet" },
             { id: "gpt-4o-mini", name: "GPT-4o Mini" },

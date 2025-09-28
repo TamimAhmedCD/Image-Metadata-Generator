@@ -9,7 +9,7 @@ import { ApiManagement } from "@/components/api-management"
 import { ImageUpload } from "@/components/image-upload"
 import { BulkActions } from "@/components/bulk-actions"
 import { ImageResults } from "@/components/image-results"
-import { generateMetadata, toBase64 } from "@/lib/metadata-generator"
+import { generateMetadataWithFallback, toBase64 } from "@/lib/metadata-generator"
 import { exportSingleCSV, exportBulkCSV } from "@/lib/csv-export"
 
 export default function Dashboard() {
@@ -105,12 +105,13 @@ export default function Dashboard() {
     const handleGenerateClick = useCallback(
         async (imageId, outputType) => {
             const img = images.find((i) => i.id === imageId)
-            if (!img || isProcessing || !currentApiKey || !selectedModel) {
+            const activeApiKeys = apiKeys.filter((key) => key.isActive)
+
+            if (!img || isProcessing || activeApiKeys.length === 0) {
                 console.log("[v0] Generate blocked:", {
                     hasImg: !!img,
                     isProcessing,
-                    hasApiKey: !!currentApiKey,
-                    hasModel: !!selectedModel,
+                    activeApiCount: activeApiKeys.length,
                 })
                 return
             }
@@ -122,80 +123,142 @@ export default function Dashboard() {
             try {
                 const base64 = await toBase64(img.file)
 
-                const metadata = await generateMetadata(
+                const {
+                    result: metadata,
+                    usedApiKey,
+                    usedModel,
+                } = await generateMetadataWithFallback(
                     { file: img.file, base64, mimeType: img.file.type },
-                    currentApiKey,
+                    apiKeys,
+                    selectedApiKey,
                     selectedModel,
                     outputType,
                 )
+
+                // Auto-switch to the working API if different from selected
+                if (usedApiKey !== selectedApiKey) {
+                    console.log(`[v0] Auto-switching to working API: ${usedApiKey}`)
+                    setSelectedApiKey(usedApiKey)
+                    setSelectedModel(usedModel)
+                }
 
                 console.log("[v0] Generation successful for:", img.file.name)
                 updateImageStatus(imageId, "complete", metadata)
             } catch (error) {
                 console.error(`[v0] Error processing ${img.file.name}:`, error)
                 const errorMessage = error.message || "Unknown error occurred"
+
+                // Enhanced error categorization for better retry logic
                 const isServiceUnavailable =
                     errorMessage.includes("Service temporarily unavailable") || errorMessage.includes("503")
                 const isRateLimit = errorMessage.includes("Rate limit") || errorMessage.includes("429")
                 const isServerError = errorMessage.includes("Server error") || errorMessage.includes("500")
                 const isPaymentRequired = errorMessage.includes("402") || errorMessage.includes("credits")
+                const isNetworkError = errorMessage.includes("network") || errorMessage.includes("timeout")
+                const isAllApisFailed = errorMessage.includes("All API keys failed")
+
+                // Most errors are retryable with the fallback system
+                const canRetry =
+                    isServiceUnavailable || isRateLimit || isServerError || isPaymentRequired || isNetworkError || isAllApisFailed
 
                 updateImageStatus(imageId, "error", {
-                    prompt: `Error: ${errorMessage}${isServiceUnavailable || isRateLimit || isServerError ? "\n\nTip: Click the retry button to try again." : ""}`,
+                    prompt: `Error: ${errorMessage}${canRetry ? "\n\nTip: Click the retry button to try again with all available APIs." : ""}`,
                     title: "API ERROR",
                     keywords: "error",
-                    canRetry: isServiceUnavailable || isRateLimit || isServerError || isPaymentRequired,
+                    canRetry: canRetry,
                 })
             } finally {
                 setIsProcessing(false)
             }
         },
-        [images, isProcessing, currentApiKey, selectedModel, updateImageStatus],
+        [images, isProcessing, apiKeys, selectedApiKey, selectedModel, updateImageStatus],
     )
 
     const handleBulkGenerate = useCallback(
         async (outputType) => {
             const pendingImages = images.filter((img) => img.status === "pending")
-            if (pendingImages.length === 0 || isProcessing || !currentApiKey || !selectedModel) return
+            const activeApiKeys = apiKeys.filter((key) => key.isActive)
+
+            if (pendingImages.length === 0 || isProcessing || activeApiKeys.length === 0) return
 
             console.log("[v0] Starting bulk generation for", pendingImages.length, "images")
             setIsProcessing(true)
 
+            // Mark all pending images as processing
             setImages((prev) => prev.map((img) => (img.status === "pending" ? { ...img, status: "processing" } : img)))
 
+            let successCount = 0
+            let errorCount = 0
+            let currentApiKey = selectedApiKey
+            let currentModel = selectedModel
+
+            // Process each image individually, continuing even if some fail
             for (const img of pendingImages) {
                 try {
                     const base64 = await toBase64(img.file)
-                    const metadata = await generateMetadata(
+
+                    const {
+                        result: metadata,
+                        usedApiKey,
+                        usedModel,
+                    } = await generateMetadataWithFallback(
                         { file: img.file, base64, mimeType: img.file.type },
+                        apiKeys,
                         currentApiKey,
-                        selectedModel,
+                        currentModel,
                         outputType,
                     )
 
+                    // Update current API if a different one was used successfully
+                    if (usedApiKey !== currentApiKey) {
+                        console.log(`[v0] Switching to working API: ${usedApiKey} for remaining images`)
+                        currentApiKey = usedApiKey
+                        currentModel = usedModel
+                        setSelectedApiKey(usedApiKey)
+                        setSelectedModel(usedModel)
+                    }
+
                     updateImageStatus(img.id, "complete", metadata)
+                    successCount++
                 } catch (error) {
                     console.error(`[v0] Error processing ${img.file.name}:`, error)
                     const errorMessage = error.message || "Unknown error occurred"
+
                     const isServiceUnavailable =
                         errorMessage.includes("Service temporarily unavailable") || errorMessage.includes("503")
                     const isRateLimit = errorMessage.includes("Rate limit") || errorMessage.includes("429")
                     const isServerError = errorMessage.includes("Server error") || errorMessage.includes("500")
+                    const isPaymentRequired = errorMessage.includes("402") || errorMessage.includes("credits")
+                    const isNetworkError = errorMessage.includes("network") || errorMessage.includes("timeout")
+                    const isAllApisFailed = errorMessage.includes("All API keys failed")
+
+                    const canRetry =
+                        isServiceUnavailable ||
+                        isRateLimit ||
+                        isServerError ||
+                        isPaymentRequired ||
+                        isNetworkError ||
+                        isAllApisFailed
 
                     updateImageStatus(img.id, "error", {
                         prompt: `Error: ${errorMessage}`,
                         title: "API ERROR",
                         keywords: "error",
-                        canRetry: isServiceUnavailable || isRateLimit || isServerError,
+                        canRetry: canRetry,
                     })
+                    errorCount++
                 }
 
-                await new Promise((resolve) => setTimeout(resolve, 2000))
+                // Add delay between requests to avoid overwhelming APIs
+                if (pendingImages.indexOf(img) < pendingImages.length - 1) {
+                    await new Promise((resolve) => setTimeout(resolve, 2000))
+                }
             }
 
+            console.log(`[v0] Bulk generation completed: ${successCount} successful, ${errorCount} failed`)
             setIsProcessing(false)
         },
-        [images, isProcessing, currentApiKey, selectedModel, updateImageStatus],
+        [images, isProcessing, apiKeys, selectedApiKey, selectedModel, updateImageStatus],
     )
 
     const handleBulkExport = useCallback(() => {
@@ -222,16 +285,19 @@ export default function Dashboard() {
     const handleRetryImage = useCallback(
         async (imageId) => {
             const img = images.find((i) => i.id === imageId)
-            if (!img || isProcessing || !currentApiKey || !selectedModel) return
+            const activeApiKeys = apiKeys.filter((key) => key.isActive)
+
+            if (!img || isProcessing || activeApiKeys.length === 0) return
 
             console.log("[v0] Retrying image:", img.file.name)
             updateImageStatus(imageId, "pending")
 
+            // Small delay to ensure UI updates
             setTimeout(() => {
                 handleGenerateClick(imageId, "full")
             }, 100)
         },
-        [images, isProcessing, currentApiKey, selectedModel, updateImageStatus, handleGenerateClick],
+        [images, isProcessing, apiKeys, updateImageStatus, handleGenerateClick],
     )
 
     if (!isInitialized) {
