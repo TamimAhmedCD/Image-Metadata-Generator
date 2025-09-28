@@ -95,7 +95,13 @@ export function ApiManagement({
             return
         }
 
-        const provider = PROVIDERS[newApiKey.provide]
+        const provider = PROVIDERS[newApiKey.provider]
+
+        if (!provider) {
+            alert("Invalid provider selected.")
+            return
+        }
+
         const apiKey = {
             id: Date.now().toString(),
             name: newApiKey.name,
@@ -104,7 +110,6 @@ export function ApiManagement({
             models: provider.models.map((m) => m.id),
             isActive: true, // Default to active
         }
-
         setApiKeys([...apiKeys, apiKey])
         setNewApiKey({ name: "", provider: "", key: "" })
         setShowAddForm(false)
