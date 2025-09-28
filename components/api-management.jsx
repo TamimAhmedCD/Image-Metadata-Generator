@@ -70,18 +70,6 @@ export function ApiManagement({
         key: "",
     })
 
-    // Load API keys from localStorage on mount
-    useEffect(() => {
-        const savedKeys = localStorage.getItem("api_keys")
-        if (savedKeys) {
-            const keys = JSON.parse(savedKeys)
-            setApiKeys(keys)
-            if (keys.length > 0) {
-                setSelectedApiKey(keys[0].id)
-            }
-        }
-    }, [])
-
     // Save API keys to localStorage whenever they change
     useEffect(() => {
         if (apiKeys.length > 0) {
@@ -96,12 +84,6 @@ export function ApiManagement({
         }
 
         const provider = PROVIDERS[newApiKey.provider]
-
-        if (!provider) {
-            alert("Invalid provider selected.")
-            return
-        }
-
         const apiKey = {
             id: Date.now().toString(),
             name: newApiKey.name,
@@ -110,6 +92,7 @@ export function ApiManagement({
             models: provider.models.map((m) => m.id),
             isActive: true, // Default to active
         }
+
         setApiKeys([...apiKeys, apiKey])
         setNewApiKey({ name: "", provider: "", key: "" })
         setShowAddForm(false)
@@ -125,11 +108,21 @@ export function ApiManagement({
         setApiKeys(newKeys)
         if (selectedApiKey === id) {
             setSelectedApiKey(newKeys.length > 0 ? newKeys[0].id : "")
+            setSelectedModel("") // Clear model when API key is removed
         }
     }
 
     const toggleApiKeyStatus = (id) => {
         setApiKeys(apiKeys.map((key) => (key.id === id ? { ...key, isActive: !key.isActive } : key)))
+
+        if (selectedApiKey === id) {
+            const updatedKey = apiKeys.find((key) => key.id === id)
+            if (updatedKey && !updatedKey.isActive) {
+                const activeKeys = apiKeys.filter((key) => key.id !== id && key.isActive)
+                setSelectedApiKey(activeKeys.length > 0 ? activeKeys[0].id : "")
+                setSelectedModel("")
+            }
+        }
     }
 
     const currentApiKey = apiKeys.find((key) => key.id === selectedApiKey)
@@ -137,10 +130,10 @@ export function ApiManagement({
 
     // Auto-select first available model when API key changes
     useEffect(() => {
-        if (currentApiKey && availableModels.length > 0) {
+        if (currentApiKey && availableModels.length > 0 && !selectedModel) {
             setSelectedModel(availableModels[0].id)
         }
-    }, [selectedApiKey])
+    }, [selectedApiKey, currentApiKey, availableModels, selectedModel])
 
     return (
         <Card className="mb-8">
